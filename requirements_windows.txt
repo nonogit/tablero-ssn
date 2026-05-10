@@ -1,0 +1,18 @@
+# SSN Insurance Dashboard — Windows local development
+# Adds pyodbc for re-extracting from .mdb files in Input/.
+#
+# Setup:
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements_windows.txt
+#   streamlit run PnL_app.py
+#
+# pyodbc requires the Microsoft Access Database Engine (ACE) ODBC driver:
+# https://www.microsoft.com/en-us/download/details.aspx?id=54920
+# Install the 64-bit version to match a 64-bit Python interpreter.
+
+pandas==2.3.3
+plotly==5.18.0
+pyodbc==5.3.0
+pyarrow==21.0.0
+streamlit==1.29.0

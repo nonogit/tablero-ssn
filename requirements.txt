@@ -1,0 +1,12 @@
+# SSN Insurance Dashboard — Python dependencies (cloud / Linux)
+# Used by Streamlit Community Cloud and Linux deployments.
+# Reads data from data/balance_cache.parquet — no pyodbc / MDB extraction needed.
+#
+# For local Windows development with MDB re-extraction, use:
+#   pip install -r requirements_windows.txt
+
+pandas==2.3.3
+plotly==5.24.1
+pyarrow==21.0.0
+streamlit==1.39.0
+numpy==2.1.3

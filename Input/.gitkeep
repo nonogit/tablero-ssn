@@ -1,0 +1,2 @@
+# Source .mdb files belong here (gitignored). Cloud deployment serves
+# from data/balance_cache.parquet so this directory may be empty.
