@@ -344,16 +344,24 @@ with tab_ranking:
         )
 
     # Top-20 bar chart
+    # Use rank-prefixed labels so the y-axis categories are always unique
+    # (defensive against any future duplicate razon_social slipping through
+    # the external-indicator matcher).
     top = ranking.head(20).copy()
-    top = top.iloc[::-1]  # plot top-1 at the top
+    top["label"] = top.apply(
+        lambda r: f"{int(r['rank']):>2}. {r['razon_social']}"
+                  if pd.notna(r["rank"]) else r["razon_social"],
+        axis=1,
+    )
+    top_plot = top.iloc[::-1]  # rank 1 at the visual top
     bar_colors = [
-        "#1f77b4" if cod != focus_cod else "#d62728"
-        for cod in top["cod_cia"]
+        "#d62728" if cod == focus_cod else "#1f77b4"
+        for cod in top_plot["cod_cia"]
     ]
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=top["value"],
-        y=top["razon_social"],
+        x=top_plot["value"],
+        y=top_plot["label"],
         orientation="h",
         marker_color=bar_colors,
         hovertemplate="<b>%{y}</b><br>" + CODE_TO_LABEL[rank_code] + ": %{x:,.2f}<extra></extra>",
@@ -365,6 +373,11 @@ with tab_ranking:
         xaxis_title=None,
         yaxis_title=None,
         showlegend=False,
+        yaxis=dict(
+            type="category",
+            categoryorder="array",
+            categoryarray=top_plot["label"].tolist(),
+        ),
     )
     st.plotly_chart(fig, use_container_width=True)
 
