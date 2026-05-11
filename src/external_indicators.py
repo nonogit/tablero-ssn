@@ -55,10 +55,21 @@ EXTERNAL_DEFS = [
 # ── name normalization & matching ─────────────────────────────────────────────
 
 _ABBREV = {"FED": "FEDERACION", "CIA": "COMPANIA", "SEG": "SEGUROS"}
+
+# Pure noise — pronouns, legal-form words. NOT category-discriminating.
 _NOISE = {
     "S", "A", "U", "SAU", "SA", "SOCIEDAD", "ANONIMA", "UNIPERSONAL",
     "COMPANIA", "COMPANY", "DE", "DEL", "LA", "EL", "LIMITADA", "LTDA",
-    "LTD", "SEGUROS", "PATRIMONIALES", "PERSONAS",
+    "LTD", "SEGUROS",
+}
+
+# Insurance-line markers — strongly discriminating. If one side has a
+# marker the other doesn't, the match is likely wrong (different
+# subsidiaries of the same group).
+_CATEGORY_MARKERS = {
+    "RETIRO", "VIDA", "PERSONAS", "ART", "PATRIMONIALES",
+    "ASEGURADORA", "RIESGOS", "TRABAJO", "CAUCION", "CAUCIONES",
+    "CREDITO", "CREDITOS", "TRANSPORTE",
 }
 
 
@@ -71,11 +82,25 @@ def _tokens(name: str | None) -> set[str]:
     s = re.sub(r"[.,]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     parts = [_ABBREV.get(p, p) for p in s.split()]
-    return {p for p in parts if len(p) > 1 and p not in _NOISE}
+    toks = {p for p in parts if len(p) > 1 and p not in _NOISE}
+    # Collapse ASEGURADORA DE RIESGOS DEL TRABAJO → ART so it matches Excel's "ART"
+    # without leaving behind extra category-marker tokens that would penalize the score
+    if {"ASEGURADORA", "RIESGOS", "TRABAJO"}.issubset(toks):
+        toks -= {"ASEGURADORA", "RIESGOS", "TRABAJO"}
+        toks.add("ART")
+    return toks
 
 
 def _match_company(excel_tokens: set[str], parquet_df: pd.DataFrame) -> str | None:
-    """Return cod_cia of best parquet match, or None below confidence threshold."""
+    """
+    Return cod_cia of best parquet match, or None below confidence threshold.
+
+    Scoring:
+      - coverage: |inter| / |excel|   (Excel tokens covered by parquet)
+      - precision: |inter| / |parquet| (parquet tokens covered by Excel)
+      - Strong penalty when one side has a CATEGORY_MARKER the other lacks
+        (avoids matching e.g. "SEGUNDA" → "LA SEGUNDA PERSONAS")
+    """
     if not excel_tokens:
         return None
     best, best_score = None, 0.0
@@ -86,7 +111,16 @@ def _match_company(excel_tokens: set[str], parquet_df: pd.DataFrame) -> str | No
         inter = excel_tokens & pt
         if not inter:
             continue
-        score = 100 * len(inter) / len(excel_tokens) + 10 * len(inter) / len(pt)
+        coverage = len(inter) / len(excel_tokens)
+        precision = len(inter) / len(pt)
+        excel_only = excel_tokens - pt
+        parquet_only = pt - excel_tokens
+        # Category marker on one side but not the other → strong signal of wrong match
+        cat_mismatch = (
+            len(excel_only & _CATEGORY_MARKERS)
+            + len(parquet_only & _CATEGORY_MARKERS)
+        )
+        score = 100 * coverage + 10 * precision - 30 * cat_mismatch
         if score > best_score:
             best_score = score
             best = p["cod_cia"]
