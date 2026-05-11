@@ -28,8 +28,8 @@ Maps each indicator from `Input/ssn_202512_indicadores_mercado1.xlsx` to the par
 ### B — Cantidad de Juicios
 **Formula:** Count of pending lawsuits.
 **Source in parquet:** none — this is a count, not a balance amount.
-**Status:** ❌ **not derivable from the balance parquet.** Requires a separate SSN data source (the regulator publishes lawsuit counts in supplementary files).
-**Decision for v1:** skip. Display an "n/a" badge in the dashboard and document the gap.
+**Status:** ✅ **served from Excel** (`Input/ssn_<YYYYMM>_indicadores_mercado*.xlsx`) for the matching quarter. For periods without an Excel report, the value is NaN.
+**Loaded by:** `src/external_indicators.py` with token-based name matching against parquet (~185/188 match rate for 2025-Q4).
 
 ---
 
@@ -87,17 +87,15 @@ Maps each indicator from `Input/ssn_202512_indicadores_mercado1.xlsx` to the par
 
 ### G — % Superávit / Capital Requerido
 **Formula:** Superávit (free regulatory capital) / Capital Mínimo Requerido × 100
-**Source in parquet:** none.
-**Status:** ❌ **not derivable.** "Capital Requerido" is computed by SSN under regulatory rules (Resolución 38.708 et seq.) using risk weights, not a single chart-of-accounts line. SSN publishes this separately.
-**Decision for v1:** skip. If it becomes critical, source it from SSN's "Estados Contables" supplementary tables and join externally.
+**Source in parquet:** none — regulatory calc under Res. 38.708 with risk weights.
+**Status:** ✅ **served from Excel** for the matching quarter (same loader as B). NaN for other periods.
 
 ---
 
 ### H — (Disp. + Inv.) / Compromisos Exigibles
 **Formula:** (Disp. + Inv.) / Compromisos Exigibles × 100
-**Source in parquet:** "Compromisos Exigibles" is not a line item in the chart of accounts. It's a regulatory aggregate (immediately-callable commitments).
-**Working hypothesis:** Compromisos Exigibles ≈ Deudas c/Aseg. en juicio + Siniestros Pendientes liquidados — pieces of `2.01.01` plus specific provision lines, but the exact composition needs SSN's regulatory definition.
-**Status:** ⚠️ **needs investigation.** v1 fallback: skip, or surface the closest proxy (`L2('1.01.') + L2('1.02.')` / `L3('2.01.01.')` — i.e. ratio D) with a clear label.
+**Source in parquet:** none — "Compromisos Exigibles" is a regulatory aggregate whose exact composition we don't have authoritative documentation for. (Allianz's published value implies a denominator ~3.6× total Pasivo, suggesting it includes multi-period cumulative obligations or stock-of-reservas-matemáticas type quantities.)
+**Status:** ✅ **served from Excel** for the matching quarter (same loader as B/G). NaN for other periods.
 
 ---
 
@@ -115,17 +113,9 @@ Maps each indicator from `Input/ssn_202512_indicadores_mercado1.xlsx` to the par
 
 ### J — Siniestralidad (Siniestros Netos Devengados / Primas Netas Devengadas)
 **Formula:** Net incurred losses / Net earned premiums × 100
-**Source in parquet:** Both numerator and denominator require **adjustments for changes in technical reserves**, which sit in:
-- `4.01.05` (COMPROMISOS TECNICOS — change in reserves on the loss side)
-- Reinsurance offsets in `4.01.03`
-- Recoveries in `5.01.04` (CREDITOS POR RECUPEROS)
+**Source in parquet:** Conceptually derivable but the exact SSN devengado treatment is non-trivial — `4.01.01` and `5.01.04` move nearly in lockstep for many companies (Allianz: 528.59B vs 528.18B), suggesting the canonical SSN formula uses a specific combination of subtotal rows plus reserve-change adjustments from `4.01.05` that we'd need authoritative documentation to reproduce.
 
-**Working formula (to be validated):**
-```
-Siniestros Netos Devengados   = L3('4.01.01.') − L3('5.01.04.')        # gross losses minus recoveries
-Primas Netas Devengadas       = L3('5.01.01.') − L3('4.01.04.') − L3('4.01.03.') ± Δ Reservas
-```
-**Status:** ⚠️ **needs validation against Excel.** The "devengado" (earned) adjustment requires `4.01.05`-derived reserve changes, which need careful sign treatment. Defer detailed reconciliation to Phase 1 implementation.
+**Status:** ✅ **served from Excel** for the matching quarter (same loader as B/G/H). NaN for other periods. Future work: derive an approximation from parquet to extend coverage to all quarters.
 
 ---
 
@@ -172,25 +162,27 @@ Primas Netas Devengadas       = L3('5.01.01.') − L3('4.01.04.') − L3('4.01.0
 
 ## Summary
 
-| Indicator | Status | Gap (Allianz Q4) | Action for Phase 1 |
+| Indicator | Source | Status | Gap (Allianz Q4) |
 |---|---|---|---|
-| A | ✅ tunable | 0.02pp | Tune denominator: exclude non-mercado company classes |
-| B | ❌ | n/a | Skip in v1 |
-| C | ✅ exact | 0.000pp | Implement as-is |
-| D | ✅ exact | 0.000pp | Implement as-is |
-| D' | ✅ exact | 0.000pp | Implement as-is |
-| E | ⚠️ approximate | 11.7pp | Investigate net-of-reinsurance convention; ship raw + footnote |
-| F | ✅ exact | 0.000pp | Implement as-is |
-| G | ❌ | n/a | Skip in v1 |
-| H | ⚠️ unclear | n/a | Skip in v1 or use D as proxy with clear label |
-| I | ✅ close | 0.17pp | Implement; investigate denominator nuance |
-| J | ⚠️ complex | n/a | Implement carefully with reserve-change adjustments; validate vs Excel |
-| K | ✅ close | 0.12pp | Implement as-is |
-| L | ✅ close | 0.13pp | Implement as-is |
-| M | ✅ close | 0.21pp | Implement with reinsurance-credit netting |
-| N | ✅ close | 0.08pp | Implement as-is |
+| A | parquet | ✅ tunable | 0.02pp |
+| B | excel | ✅ external | exact (source value) |
+| C | parquet | ✅ exact | 0.000pp |
+| D | parquet | ✅ exact | 0.000pp |
+| D' | parquet | ✅ exact | 0.000pp |
+| E | parquet | ⚠️ approximate | 11.7pp (needs net-of-reinsurance) |
+| F | parquet | ✅ exact | 0.000pp |
+| G | excel | ✅ external | exact (source value) |
+| H | excel | ✅ external | exact (source value) |
+| I | parquet | ✅ close | 0.17pp |
+| J | excel | ✅ external | exact (source value) |
+| K | parquet | ✅ close | 0.12pp |
+| L | parquet | ✅ close | 0.13pp |
+| M | parquet | ✅ close | 0.21pp |
+| N | parquet | ✅ close | 0.08pp |
 
-**Coverage for v1:** 11 of 15 indicators (A, C, D, D', F, I, K, L, M, N exact-or-close + E approximate). Three deferred (B, G, H), one needing implementation care (J).
+**Coverage:** 15 of 15 SSN-official indicators when an Excel report exists for the selected quarter. For quarters without an Excel report (currently all except 2025-Q4), only the 11 parquet-derived indicators are populated.
+
+**External indicators are loaded from `Input/ssn_<YYYYMM>_indicadores_mercado*.xlsx` by `src/external_indicators.py`. Name matching uses token-set scoring with abbreviation expansion — current match rate for 2025-Q4: 185/188 (98.4%). Unmatched: AURORA, COFACE, NSA (not present in the parquet for that quarter).
 
 ---
 

@@ -13,12 +13,16 @@ import pandas as pd
 # False = descending → rank 1 means HIGHEST value (e.g. largest market share)
 DEFAULT_ASCENDING: dict[str, bool] = {
     "A":  False,   # market share
+    "B":  True,    # cantidad de juicios — fewer is better
     "C":  False,   # créditos / activos (interpretation ambiguous; default desc)
     "D":  False,   # liquidity
     "D'": False,   # liquidity ampliada
     "E":  False,   # cobertura técnica
     "F":  False,   # inversiones / activos
+    "G":  False,   # superávit / capital requerido — higher is better
+    "H":  False,   # disp+inv / compromisos exigibles — higher is better
     "I":  False,   # % cesión (interpretation ambiguous; default desc)
+    "J":  True,    # siniestralidad — lower is better (loss ratio)
     "K":  True,    # gastos producción — lower is better
     "L":  True,    # gastos explotación — lower is better
     "M":  True,    # gastos totales — lower is better

@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from src.extractor import load_data, company_list, period_list
-from src.metrics import INDICATOR_DEFS, build_aggregates, compute_with_yoy
+from src.metrics import ALL_INDICATOR_DEFS, INDICATOR_DEFS, build_aggregates, compute_with_yoy
 from src.ranking import DEFAULT_ASCENDING, build_ranking, build_wide_table, delta_rank_arrow
 from src.benchmark import nearest_peers, percentile_rank, quartile_label
 from src.fiscal import fiscal_info, same_position_prior_year
@@ -114,9 +114,13 @@ def pp_delta(current: float | None, prior: float | None) -> str | None:
 
 
 # ── shared indicator metadata (used by all tabs) ─────────────────────────────
-INDICATOR_OPTIONS = [(code, f"{code} — {name}") for code, name, *_ in INDICATOR_DEFS]
+# Use ALL_INDICATOR_DEFS so external (Excel-sourced) indicators B, G, H, J
+# appear in selectors. Their values are only populated for quarters where
+# the SSN Excel report is available — otherwise they're NaN and skipped.
+INDICATOR_OPTIONS = [(code, f"{code} — {name}") for code, name, *_ in ALL_INDICATOR_DEFS]
 CODE_TO_LABEL = dict(INDICATOR_OPTIONS)
 INDICATOR_CODES = [c for c, _ in INDICATOR_OPTIONS]
+INDICATOR_SOURCE = {code: src for code, name, cat, status, src in ALL_INDICATOR_DEFS}
 
 
 def _indicator_index(code: str) -> int:

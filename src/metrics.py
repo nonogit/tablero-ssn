@@ -11,6 +11,7 @@ import pandas as pd
 from pathlib import Path
 
 from .fiscal import same_position_prior_year, fiscal_info
+from .external_indicators import EXTERNAL_DEFS, load_external_long
 
 
 # ── account-code aggregation keys ─────────────────────────────────────────────
@@ -106,6 +107,7 @@ def _ind_N(a):
 
 
 # code, name, category, status, fn
+# Indicators computed from the balance parquet.
 INDICATOR_DEFS: list[tuple[str, str, str, str, callable]] = [
     ("A",  "% Producción Total",                              "patrimonial", "tunable",     _ind_A),
     ("C",  "% Créditos / Activos",                            "patrimonial", "exact",       _ind_C),
@@ -120,6 +122,18 @@ INDICATOR_DEFS: list[tuple[str, str, str, str, callable]] = [
     ("N",  "% Resultado / Primas Emitidas",                   "gestion",     "close",       _ind_N),
 ]
 
+# Combined indicator list including external (Excel-only) indicators.
+# UI consumers iterate this for the full set; the source attribute tells
+# them whether data is available for arbitrary quarters or only when the
+# corresponding Excel report exists.
+ALL_INDICATOR_DEFS: list[tuple[str, str, str, str, str]] = [
+    (code, name, cat, status, "parquet")
+    for code, name, cat, status, _fn in INDICATOR_DEFS
+] + [
+    (code, name, cat, "external", "excel")
+    for code, name, cat in EXTERNAL_DEFS
+]
+
 
 # ── public API ────────────────────────────────────────────────────────────────
 
@@ -127,10 +141,15 @@ def compute_indicators(df: pd.DataFrame, quarter: str) -> pd.DataFrame:
     """
     Compute every SSN-official indicator for every company in `quarter`.
 
-    Returns long-format columns:
-        cod_cia, razon_social, quarter, indicator, name, category, status, value
+    Parquet-derived indicators are computed from balance accounts; external
+    indicators (B, G, H, J) are pulled from the SSN-published Excel report
+    for the matching quarter, if available.
 
-    `value` is in percentage units (×100), matching SSN's published convention.
+    Returns long-format columns:
+        cod_cia, razon_social, quarter, indicator, name, category, status,
+        source, value
+
+    `value` is in percentage units for ratios, raw count for B (juicios).
     """
     a = build_aggregates(df, quarter)
 
@@ -143,9 +162,25 @@ def compute_indicators(df: pd.DataFrame, quarter: str) -> pd.DataFrame:
             "name":      name,
             "category":  category,
             "status":    status,
+            "source":    "parquet",
             "value":     s.values,
         }))
     out = pd.concat(pieces, ignore_index=True)
+
+    # Merge external (Excel-sourced) indicators for this quarter
+    ext_long = load_external_long(df, quarter)
+    if not ext_long.empty:
+        ext_meta = {code: (name, cat) for code, name, cat in EXTERNAL_DEFS}
+        ext_long = ext_long.copy()
+        ext_long["name"]     = ext_long["indicator"].map(lambda c: ext_meta[c][0])
+        ext_long["category"] = ext_long["indicator"].map(lambda c: ext_meta[c][1])
+        ext_long["status"]   = "external"
+        ext_long["source"]   = "excel"
+        out = pd.concat(
+            [out, ext_long[["cod_cia", "indicator", "name", "category", "status", "source", "value"]]],
+            ignore_index=True,
+        )
+
     out["quarter"] = quarter
 
     names = (
@@ -156,7 +191,7 @@ def compute_indicators(df: pd.DataFrame, quarter: str) -> pd.DataFrame:
     out["razon_social"] = out["cod_cia"].map(names)
 
     return out[["cod_cia", "razon_social", "quarter", "indicator",
-                "name", "category", "status", "value"]]
+                "name", "category", "status", "source", "value"]]
 
 
 def compute_with_yoy(df: pd.DataFrame, quarter: str) -> pd.DataFrame:
